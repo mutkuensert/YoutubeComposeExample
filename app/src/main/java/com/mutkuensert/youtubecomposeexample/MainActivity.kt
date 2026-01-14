@@ -85,6 +85,7 @@ private fun VideoPlayer(
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
     var _fullScreenView: View? by remember { mutableStateOf(null) }
     var player: YouTubePlayer? by remember { mutableStateOf(null) }
+    var isFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
     var currentSecond: Float by rememberSaveable { mutableStateOf(0f) }
     var playing: Boolean by rememberSaveable { mutableStateOf(false) }
     val tracker = remember { YouTubePlayerTracker() }
@@ -132,14 +133,14 @@ private fun VideoPlayer(
                         startFullscreen(activity, fullscreenView)
                     }
                     _fullScreenView = fullscreenView
+                    isFullscreen = true
                 }
 
 
                 override fun onExitFullscreen() {
-                    val decor = activity?.window?.decorView as? ViewGroup ?: return
-                    _fullScreenView?.let { decor.removeView(it) }
+                    _fullScreenView?.removeFromParent()
                     _fullScreenView = null
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    isFullscreen = false
                 }
             })
 
@@ -147,6 +148,14 @@ private fun VideoPlayer(
             youTubePlayerView
         }
     )
+
+    LaunchedEffect(playerView, isFullscreen) {
+        val _playerView = playerView
+        if (isFullscreen && _playerView != null && activity != null) {
+            _playerView.removeFromParent()
+            startFullscreen(activity, _playerView)
+        }
+    }
 
     LaunchedEffect(player) {
         if (playing) {
@@ -159,9 +168,7 @@ private fun VideoPlayer(
 
     DisposableEffect(lifecycleOwner, activity) {
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            val decor = activity?.window?.decorView as? ViewGroup
-            _fullScreenView?.let { decor?.removeView(it) }
+            _fullScreenView?.removeFromParent()
             _fullScreenView = null
             playerView?.release()
             playerView = null
@@ -179,6 +186,10 @@ private fun startFullscreen(activity: Activity, view: View) {
         )
     )
     activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+}
+
+fun View.removeFromParent() {
+    (this.parent as ViewGroup).removeView(this)
 }
 
 fun Context.findActivity(): Activity? {
