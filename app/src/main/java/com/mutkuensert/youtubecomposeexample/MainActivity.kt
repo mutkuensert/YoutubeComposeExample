@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -85,7 +86,7 @@ private fun VideoPlayer(
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
     var _fullScreenView: View? by remember { mutableStateOf(null) }
     var player: YouTubePlayer? by remember { mutableStateOf(null) }
-    var isFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
+    var shouldBeFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
     var currentSecond: Float by rememberSaveable { mutableStateOf(0f) }
     var playing: Boolean by rememberSaveable { mutableStateOf(false) }
     val tracker = remember { YouTubePlayerTracker() }
@@ -125,22 +126,18 @@ private fun VideoPlayer(
             youTubePlayerView.initialize(listener, options)
 
             youTubePlayerView.addFullscreenListener(object : FullscreenListener {
-                override fun onEnterFullscreen(
-                    fullscreenView: View,
-                    exitFullscreen: () -> Unit
-                ) {
-                    if (activity != null) {
-                        startFullscreen(activity, fullscreenView)
-                    }
+                override fun onEnterFullscreen(fullscreenView: View, exitFullscreen: () -> Unit) {
+                    activity?.addViewMatchingParent(fullscreenView)
+                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     _fullScreenView = fullscreenView
-                    isFullscreen = true
+                    shouldBeFullscreen = true
                 }
 
 
                 override fun onExitFullscreen() {
                     _fullScreenView?.removeFromParent()
                     _fullScreenView = null
-                    isFullscreen = false
+                    shouldBeFullscreen = false
                 }
             })
 
@@ -149,13 +146,7 @@ private fun VideoPlayer(
         }
     )
 
-    LaunchedEffect(playerView, isFullscreen) {
-        val _playerView = playerView
-        if (isFullscreen && _playerView != null && activity != null) {
-            _playerView.removeFromParent()
-            startFullscreen(activity, _playerView)
-        }
-    }
+    OrientationListener(shouldBeFullscreen, playerView, activity)
 
     LaunchedEffect(player) {
         if (playing) {
@@ -176,8 +167,27 @@ private fun VideoPlayer(
     }
 }
 
-private fun startFullscreen(activity: Activity, view: View) {
-    val decor = activity.window.decorView as ViewGroup
+@Composable
+private fun OrientationListener(
+    shouldBeFullscreen: Boolean,
+    playerView: YouTubePlayerView?,
+    activity: Activity?
+) {
+    val orientation = LocalConfiguration.current.orientation
+    var previousOrientation by rememberSaveable { mutableStateOf(orientation) }
+    LaunchedEffect(shouldBeFullscreen, orientation) {
+        val _playerView = playerView
+        if (shouldBeFullscreen && orientation != previousOrientation && _playerView?.isFullscreen() == false && activity != null) {
+            _playerView.removeFromParent()
+            activity.addViewMatchingParent(_playerView)
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        previousOrientation = orientation
+    }
+}
+
+private fun Activity.addViewMatchingParent(view: View) {
+    val decor = window.decorView as ViewGroup
     decor.addView(
         view,
         ViewGroup.LayoutParams(
@@ -185,7 +195,14 @@ private fun startFullscreen(activity: Activity, view: View) {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
     )
-    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    decor.post {
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(decor.width, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(decor.height, View.MeasureSpec.EXACTLY)
+        view.measure(widthSpec, heightSpec)
+        view.layout(0, 0, decor.width, decor.height)
+        view.requestLayout()
+        view.invalidate()
+    }
 }
 
 fun View.removeFromParent() {
@@ -198,4 +215,16 @@ fun Context.findActivity(): Activity? {
         is ContextWrapper -> this.baseContext.findActivity()
         else -> null
     }
+}
+
+fun YouTubePlayerView.isFullscreen(): Boolean {
+    return isMatchParentWidth() && isMatchParentHeight()
+}
+
+fun View.isMatchParentWidth(): Boolean {
+    return layoutParams?.width == ViewGroup.LayoutParams.MATCH_PARENT
+}
+
+fun View.isMatchParentHeight(): Boolean {
+    return layoutParams?.height == ViewGroup.LayoutParams.MATCH_PARENT
 }
