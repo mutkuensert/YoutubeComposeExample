@@ -2,11 +2,11 @@ package com.mutkuensert.youtubecomposeexample
 
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +46,6 @@ import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.YouTube
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.loadOrCueVideo
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,11 +82,11 @@ private fun VideoPlayer(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
+    val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
-    var _fullScreenPlayerView: YouTubePlayerView? by remember { mutableStateOf(null) }
+    var fullscreenPlayerView: YouTubePlayerView? by remember { mutableStateOf(null) }
     var defaultPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
     var fullscreenPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
     var shouldBeFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
@@ -122,9 +121,12 @@ private fun VideoPlayer(
     }
 
     val cancelFullscreenResources = {
-        _fullScreenPlayerView?.removeFromParent()
-        _fullScreenPlayerView?.release()
-        _fullScreenPlayerView = null
+        fullscreenPlayerView?.let {
+            //lifecycleOwner.lifecycle.removeObserver(it)
+        }
+        fullscreenPlayerView?.removeFromParent()
+        fullscreenPlayerView?.release()
+        fullscreenPlayerView = null
         fullscreenPlayer = null
     }
 
@@ -141,7 +143,7 @@ private fun VideoPlayer(
                 context,
                 lifecycleOwner,
                 onClickFullscreenToggle = {
-                    _fullScreenPlayerView = createPlayerView(
+                    fullscreenPlayerView = createPlayerView(
                         context,
                         lifecycleOwner,
                         onClickFullscreenToggle = closeFullscreen,
@@ -149,7 +151,7 @@ private fun VideoPlayer(
                     )
                     shouldBeFullscreen = true
                     playing = shouldPlay(defaultPlayerTracker.state)
-                    activity?.addViewMatchingScreen(_fullScreenPlayerView!!)
+                    activity?.addViewMatchingScreen(fullscreenPlayerView!!)
                 },
                 defaultPlayerListener
             )
@@ -167,7 +169,7 @@ private fun VideoPlayer(
                 onClickFullscreenToggle = closeFullscreen,
                 fullscreenPlayerListener
             )
-            _fullScreenPlayerView = view
+            fullscreenPlayerView = view
             view
         },
     )
@@ -246,7 +248,7 @@ private fun OrientationListener(
 ) {
     val orientation = LocalConfiguration.current.orientation
     var previousOrientation by rememberSaveable { mutableIntStateOf(orientation) }
-    val activity = LocalContext.current.findActivity()
+    val activity = LocalActivity.current
     LaunchedEffect(orientation) {
         if (shouldBeFullscreen && orientation != previousOrientation && activity != null) {
             val fullScreenView = createFullScreenView()
@@ -277,12 +279,4 @@ private fun Activity.addViewMatchingScreen(view: View) {
 
 private fun View.removeFromParent() {
     (this.parent as ViewGroup).removeView(this)
-}
-
-private fun Context.findActivity(): Activity? {
-    return when (this) {
-        is Activity -> this
-        is ContextWrapper -> this.baseContext.findActivity()
-        else -> null
-    }
 }
