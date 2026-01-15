@@ -40,10 +40,12 @@ import com.mutkuensert.youtubecomposeexample.ui.theme.YoutubeComposeExampleTheme
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.FullscreenListener
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.YouTubePlayerTracker
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.loadOrCueVideo
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -139,13 +141,12 @@ private fun VideoPlayer(
                 context,
                 lifecycleOwner,
                 onClickFullscreenToggle = {
-                    _fullScreenPlayerView =
-                        createPlayerView(
-                            context,
-                            lifecycleOwner,
-                            onClickFullscreenToggle = closeFullscreen,
-                            fullscreenPlayerListener
-                        )
+                    _fullScreenPlayerView = createPlayerView(
+                        context,
+                        lifecycleOwner,
+                        onClickFullscreenToggle = closeFullscreen,
+                        fullscreenPlayerListener
+                    )
                     shouldBeFullscreen = true
                     playing = shouldPlay(defaultPlayerTracker.state)
                     activity?.addViewMatchingScreen(_fullScreenPlayerView!!)
@@ -212,19 +213,25 @@ private fun createPlayerView(
     listener: AbstractYouTubePlayerListener,
 ): YouTubePlayerView {
     val youTubePlayerView = YouTubePlayerView(context)
-    val overlayUi = youTubePlayerView.inflateCustomPlayerUi(R.layout.custom_layout)
-    val view = overlayUi.findViewById<View>(R.id.fullscreenToggle)
-
-    view.setOnClickListener {
-        onClickFullscreenToggle.invoke()
-    }
     youTubePlayerView.enableAutomaticInitialization = false
     lifecycleOwner.lifecycle.addObserver(youTubePlayerView)
+    youTubePlayerView.addFullscreenListener(object : FullscreenListener {
+        override fun onEnterFullscreen(
+            fullscreenView: View,
+            exitFullscreen: () -> Unit
+        ) {
+            onClickFullscreenToggle()
+        }
+
+        override fun onExitFullscreen() {
+            onClickFullscreenToggle()
+        }
+    })
 
     val options = IFramePlayerOptions.Builder(context)
         .controls(1)
         .rel(0)
-        .fullscreen(0)
+        .fullscreen(1)
         .ivLoadPolicy(3)
         .build()
 
