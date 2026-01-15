@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +41,7 @@ import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstan
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.YouTubePlayerTracker
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.loadOrCueVideo
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
@@ -82,12 +85,53 @@ private fun VideoPlayer(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
-    var _fullScreenView: View? by remember { mutableStateOf(null) }
+    var _fullScreenPlayerView: YouTubePlayerView? by remember { mutableStateOf(null) }
     var defaultPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
     var fullscreenPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
     var shouldBeFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
-    var currentSecond: Float by rememberSaveable { mutableStateOf(0f) }
+    var currentSecond: Float by rememberSaveable { mutableFloatStateOf(0f) }
     var playing: Boolean by rememberSaveable { mutableStateOf(false) }
+    val defaultPlayerTracker = remember { YouTubePlayerTracker() }
+    val fullscreenPlayerTracker = remember { YouTubePlayerTracker() }
+    val defaultPlayerListener = remember {
+        object : AbstractYouTubePlayerListener() {
+            override fun onReady(youTubePlayer: YouTubePlayer) {
+                youTubePlayer.addListener(defaultPlayerTracker)
+                defaultPlayer = youTubePlayer
+            }
+
+            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                currentSecond = second
+            }
+        }
+    }
+
+    val fullscreenPlayerListener = remember {
+        object : AbstractYouTubePlayerListener() {
+            override fun onReady(youTubePlayer: YouTubePlayer) {
+                youTubePlayer.addListener(fullscreenPlayerTracker)
+                fullscreenPlayer = youTubePlayer
+            }
+
+            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                currentSecond = second
+            }
+        }
+    }
+
+    val cancelFullscreenResources = {
+        _fullScreenPlayerView?.removeFromParent()
+        _fullScreenPlayerView?.release()
+        _fullScreenPlayerView = null
+        fullscreenPlayer = null
+    }
+
+    val closeFullscreen = {
+        val state = fullscreenPlayerTracker.state
+        playing = shouldPlay(state)
+        cancelFullscreenResources.invoke()
+        shouldBeFullscreen = false
+    }
 
     AndroidView(
         modifier = modifier,
@@ -97,41 +141,21 @@ private fun VideoPlayer(
                 lifecycleOwner,
                 currentSecond,
                 onClickFullscreenToggle = {
-                    if (playerView != null) {
-                        if (_fullScreenView != null) {
-                            _fullScreenView!!.removeFromParent()
-                            _fullScreenView = null
-                            shouldBeFullscreen = false
-                        } else {
-                            _fullScreenView =
-                                createPlayerView(
-                                    context,
-                                    lifecycleOwner,
-                                    currentSecond,
-                                    onClickFullscreenToggle = {
-                                        _fullScreenView!!.removeFromParent()
-                                        _fullScreenView = null
-                                        shouldBeFullscreen = false
-                                    },
-                                    onReady = {
-                                        fullscreenPlayer = it
-                                    }, onStateChange = {
-                                        playing = it == PlayerConstants.PlayerState.PLAYING
-                                    }, onCurrentSecond = {
-                                        currentSecond = it
-                                    })
-                            shouldBeFullscreen = true
-                            activity?.addViewMatchingParent(_fullScreenView!!)
-                        }
-                    }
+                    _fullScreenPlayerView =
+                        createPlayerView(
+                            context,
+                            lifecycleOwner,
+                            currentSecond,
+                            onClickFullscreenToggle = closeFullscreen,
+                            fullscreenPlayerListener
+                        )
+                    shouldBeFullscreen = true
+                    val state = defaultPlayerTracker.state
+                    playing = shouldPlay(state)
+                    activity?.addViewMatchingParent(_fullScreenPlayerView!!)
                 },
-                onReady = {
-                    defaultPlayer = it
-                }, onStateChange = {
-                    playing = it == PlayerConstants.PlayerState.PLAYING
-                }, onCurrentSecond = {
-                    currentSecond = it
-                })
+                defaultPlayerListener
+            )
             playerView = view
             view
         }
@@ -139,32 +163,25 @@ private fun VideoPlayer(
 
     OrientationListener(
         shouldBeFullscreen,
-        getFullScreenView = {
+        createFullScreenView = {
             val view = createPlayerView(
                 context,
                 lifecycleOwner,
                 currentSecond,
-                onClickFullscreenToggle = {
-                    _fullScreenView!!.removeFromParent()
-                    _fullScreenView = null
-                    shouldBeFullscreen = false
-                },
-                onReady = {
-                    fullscreenPlayer = it
-                },
-                onStateChange = {
-                    playing = it == PlayerConstants.PlayerState.PLAYING
-                },
-                onCurrentSecond = {
-                    currentSecond = it
-                })
-            _fullScreenView = view
+                onClickFullscreenToggle = closeFullscreen,
+                fullscreenPlayerListener
+            )
+            _fullScreenPlayerView = view
             view
         },
     )
 
     LaunchedEffect(defaultPlayer, fullscreenPlayer) {
-        val player = if (fullscreenPlayer != null) fullscreenPlayer else defaultPlayer
+        val player = if (fullscreenPlayer != null) {
+            fullscreenPlayer
+        } else {
+            defaultPlayer
+        }
         if (playing) {
             player?.loadOrCueVideo(lifecycleOwner.lifecycle, videoId, currentSecond)
         } else {
@@ -174,22 +191,31 @@ private fun VideoPlayer(
 
     DisposableEffect(lifecycleOwner, activity) {
         onDispose {
-            _fullScreenView?.removeFromParent()
-            _fullScreenView = null
+            val state = if (shouldBeFullscreen) {
+                fullscreenPlayerTracker.state
+            } else {
+                defaultPlayerTracker.state
+            }
+            playing = shouldPlay(state)
+            cancelFullscreenResources.invoke()
             playerView?.release()
             playerView = null
         }
     }
 }
 
-fun createPlayerView(
+private fun shouldPlay(state: PlayerConstants.PlayerState): Boolean {
+    return state == PlayerConstants.PlayerState.PLAYING
+            || state == PlayerConstants.PlayerState.BUFFERING
+            || state == PlayerConstants.PlayerState.VIDEO_CUED
+}
+
+private fun createPlayerView(
     context: Context,
     lifecycleOwner: LifecycleOwner,
     currentSecond: Float,
     onClickFullscreenToggle: () -> Unit,
-    onReady: (YouTubePlayer) -> Unit,
-    onStateChange: (PlayerConstants.PlayerState) -> Unit,
-    onCurrentSecond: (Float) -> Unit
+    listener: AbstractYouTubePlayerListener,
 ): YouTubePlayerView {
     val youTubePlayerView = YouTubePlayerView(context)
     val overlayUi = youTubePlayerView.inflateCustomPlayerUi(R.layout.custom_layout)
@@ -208,23 +234,6 @@ fun createPlayerView(
         .ivLoadPolicy(3)
         .build()
 
-    val listener = object : AbstractYouTubePlayerListener() {
-        override fun onReady(youTubePlayer: YouTubePlayer) {
-            onReady(youTubePlayer)
-        }
-
-        override fun onStateChange(
-            youTubePlayer: YouTubePlayer,
-            state: PlayerConstants.PlayerState
-        ) {
-            onStateChange(state)
-        }
-
-        override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-            onCurrentSecond(second)
-        }
-    }
-
     youTubePlayerView.initialize(listener, options)
     return youTubePlayerView
 }
@@ -232,14 +241,14 @@ fun createPlayerView(
 @Composable
 private fun OrientationListener(
     shouldBeFullscreen: Boolean,
-    getFullScreenView: () -> View,
+    createFullScreenView: () -> View,
 ) {
     val orientation = LocalConfiguration.current.orientation
-    var previousOrientation by rememberSaveable { mutableStateOf(orientation) }
+    var previousOrientation by rememberSaveable { mutableIntStateOf(orientation) }
     val activity = LocalContext.current.findActivity()
     LaunchedEffect(orientation) {
         if (shouldBeFullscreen && orientation != previousOrientation && activity != null) {
-            val fullScreenView = getFullScreenView()
+            val fullScreenView = createFullScreenView()
             activity.addViewMatchingParent(fullScreenView)
         }
         previousOrientation = orientation
@@ -265,11 +274,11 @@ private fun Activity.addViewMatchingParent(view: View) {
     }
 }
 
-fun View.removeFromParent() {
+private fun View.removeFromParent() {
     (this.parent as ViewGroup).removeView(this)
 }
 
-fun Context.findActivity(): Activity? {
+private fun Context.findActivity(): Activity? {
     return when (this) {
         is Activity -> this
         is ContextWrapper -> this.baseContext.findActivity()
