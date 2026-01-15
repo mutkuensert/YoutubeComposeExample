@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -22,28 +23,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mutkuensert.youtubecomposeexample.ui.theme.YoutubeComposeExampleTheme
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.FullscreenListener
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.YouTubePlayerTracker
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.loadOrCueVideo
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
 class MainActivity : ComponentActivity() {
@@ -81,59 +78,28 @@ private fun VideoPlayer(
     videoId: String,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
-    var fullscreenPlayerView: YouTubePlayerView? by remember { mutableStateOf(null) }
-    var defaultPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
-    var fullscreenPlayer: YouTubePlayer? by remember { mutableStateOf(null) }
-    var shouldBeFullscreen: Boolean by rememberSaveable { mutableStateOf(false) }
-    var currentSecond: Float by rememberSaveable { mutableFloatStateOf(0f) }
-    var playing: Boolean by rememberSaveable { mutableStateOf(false) }
-    val defaultPlayerTracker = remember { YouTubePlayerTracker() }
-    val fullscreenPlayerTracker = remember { YouTubePlayerTracker() }
-    val defaultPlayerListener = remember {
+    var fullscreenView: View? by remember { mutableStateOf(null) }
+    var player: YouTubePlayer? by remember { mutableStateOf(null) }
+    val tracker = remember { YouTubePlayerTracker() }
+    val playerListener = remember {
         object : AbstractYouTubePlayerListener() {
             override fun onReady(youTubePlayer: YouTubePlayer) {
-                youTubePlayer.addListener(defaultPlayerTracker)
-                defaultPlayer = youTubePlayer
-            }
-
-            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-                currentSecond = second
+                youTubePlayer.addListener(tracker)
+                player = youTubePlayer
             }
         }
     }
-
-    val fullscreenPlayerListener = remember {
-        object : AbstractYouTubePlayerListener() {
-            override fun onReady(youTubePlayer: YouTubePlayer) {
-                youTubePlayer.addListener(fullscreenPlayerTracker)
-                fullscreenPlayer = youTubePlayer
-            }
-
-            override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-                currentSecond = second
-            }
-        }
+    val exitFullscreen = {
+        activity?.showSystemBars()
+        fullscreenView?.removeFromParent()
+        fullscreenView = null
     }
 
-    val cancelFullscreenResources = {
-        fullscreenPlayerView?.let {
-            //lifecycleOwner.lifecycle.removeObserver(it)
-        }
-        fullscreenPlayerView?.removeFromParent()
-        fullscreenPlayerView?.release()
-        fullscreenPlayerView = null
-        fullscreenPlayer = null
-    }
-
-    val closeFullscreen = {
-        playing = shouldPlay(fullscreenPlayerTracker.state)
-        cancelFullscreenResources.invoke()
-        shouldBeFullscreen = false
+    if (fullscreenView != null) {
+        BackHandler { exitFullscreen() }
     }
 
     AndroidView(
@@ -142,76 +108,51 @@ private fun VideoPlayer(
             val view = createPlayerView(
                 context,
                 lifecycleOwner,
-                onClickFullscreenToggle = {
-                    fullscreenPlayerView = createPlayerView(
-                        context,
-                        lifecycleOwner,
-                        onClickFullscreenToggle = closeFullscreen,
-                        fullscreenPlayerListener
-                    )
-                    shouldBeFullscreen = true
-                    playing = shouldPlay(defaultPlayerTracker.state)
-                    activity?.addViewMatchingScreen(fullscreenPlayerView!!)
+                onEnterFullscreen = { view ->
+                    fullscreenView = view
+                    activity?.enableTransientSystemBars()
+                    activity?.addViewMatchingScreen(view)
                 },
-                defaultPlayerListener
+                exitFullscreen,
+                playerListener
             )
             playerView = view
             view
         }
     )
 
-    OrientationListener(
-        shouldBeFullscreen,
-        createFullScreenView = {
-            val view = createPlayerView(
-                context,
-                lifecycleOwner,
-                onClickFullscreenToggle = closeFullscreen,
-                fullscreenPlayerListener
-            )
-            fullscreenPlayerView = view
-            view
-        },
-    )
-
-    LaunchedEffect(defaultPlayer, fullscreenPlayer) {
-        val player = if (fullscreenPlayer != null) {
-            fullscreenPlayer
-        } else {
-            defaultPlayer
-        }
-        if (playing) {
-            player?.loadOrCueVideo(lifecycleOwner.lifecycle, videoId, currentSecond)
-        } else {
-            player?.cueVideo(videoId, currentSecond)
-        }
+    LaunchedEffect(player, videoId) {
+        player?.cueVideo(videoId, 0f)
     }
 
     DisposableEffect(lifecycleOwner, activity) {
         onDispose {
-            val state = if (shouldBeFullscreen) {
-                fullscreenPlayerTracker.state
-            } else {
-                defaultPlayerTracker.state
-            }
-            playing = shouldPlay(state)
-            cancelFullscreenResources.invoke()
+            fullscreenView?.removeFromParent()
+            fullscreenView = null
+            playerView?.let { lifecycleOwner.lifecycle.removeObserver(it) }
             playerView?.release()
             playerView = null
         }
     }
 }
 
-private fun shouldPlay(state: PlayerConstants.PlayerState): Boolean {
-    return state == PlayerConstants.PlayerState.PLAYING
-            || state == PlayerConstants.PlayerState.BUFFERING
-            || state == PlayerConstants.PlayerState.VIDEO_CUED
+private fun Activity.enableTransientSystemBars() {
+    val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+    windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    windowInsetsController.systemBarsBehavior =
+        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+}
+
+private fun Activity.showSystemBars() {
+    val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+    windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
 }
 
 private fun createPlayerView(
     context: Context,
     lifecycleOwner: LifecycleOwner,
-    onClickFullscreenToggle: () -> Unit,
+    onEnterFullscreen: (View) -> Unit,
+    onExitFullscreen: () -> Unit,
     listener: AbstractYouTubePlayerListener,
 ): YouTubePlayerView {
     val youTubePlayerView = YouTubePlayerView(context)
@@ -222,11 +163,11 @@ private fun createPlayerView(
             fullscreenView: View,
             exitFullscreen: () -> Unit
         ) {
-            onClickFullscreenToggle()
+            onEnterFullscreen(fullscreenView)
         }
 
         override fun onExitFullscreen() {
-            onClickFullscreenToggle()
+            onExitFullscreen()
         }
     })
 
@@ -241,23 +182,6 @@ private fun createPlayerView(
     return youTubePlayerView
 }
 
-@Composable
-private fun OrientationListener(
-    shouldBeFullscreen: Boolean,
-    createFullScreenView: () -> View,
-) {
-    val orientation = LocalConfiguration.current.orientation
-    var previousOrientation by rememberSaveable { mutableIntStateOf(orientation) }
-    val activity = LocalActivity.current
-    LaunchedEffect(orientation) {
-        if (shouldBeFullscreen && orientation != previousOrientation && activity != null) {
-            val fullScreenView = createFullScreenView()
-            activity.addViewMatchingScreen(fullScreenView)
-        }
-        previousOrientation = orientation
-    }
-}
-
 private fun Activity.addViewMatchingScreen(view: View) {
     val decor = window.decorView as ViewGroup
     decor.addView(
@@ -267,14 +191,6 @@ private fun Activity.addViewMatchingScreen(view: View) {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
     )
-    decor.post {
-        val widthSpec = View.MeasureSpec.makeMeasureSpec(decor.width, View.MeasureSpec.EXACTLY)
-        val heightSpec = View.MeasureSpec.makeMeasureSpec(decor.height, View.MeasureSpec.EXACTLY)
-        view.measure(widthSpec, heightSpec)
-        view.layout(0, 0, decor.width, decor.height)
-        view.requestLayout()
-        view.invalidate()
-    }
 }
 
 private fun View.removeFromParent() {
