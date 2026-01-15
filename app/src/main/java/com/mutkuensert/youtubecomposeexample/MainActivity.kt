@@ -127,8 +127,7 @@ private fun VideoPlayer(
     }
 
     val closeFullscreen = {
-        val state = fullscreenPlayerTracker.state
-        playing = shouldPlay(state)
+        playing = shouldPlay(fullscreenPlayerTracker.state)
         cancelFullscreenResources.invoke()
         shouldBeFullscreen = false
     }
@@ -139,20 +138,17 @@ private fun VideoPlayer(
             val view = createPlayerView(
                 context,
                 lifecycleOwner,
-                currentSecond,
                 onClickFullscreenToggle = {
                     _fullScreenPlayerView =
                         createPlayerView(
                             context,
                             lifecycleOwner,
-                            currentSecond,
                             onClickFullscreenToggle = closeFullscreen,
                             fullscreenPlayerListener
                         )
                     shouldBeFullscreen = true
-                    val state = defaultPlayerTracker.state
-                    playing = shouldPlay(state)
-                    activity?.addViewMatchingParent(_fullScreenPlayerView!!)
+                    playing = shouldPlay(defaultPlayerTracker.state)
+                    activity?.addViewMatchingScreen(_fullScreenPlayerView!!)
                 },
                 defaultPlayerListener
             )
@@ -167,7 +163,6 @@ private fun VideoPlayer(
             val view = createPlayerView(
                 context,
                 lifecycleOwner,
-                currentSecond,
                 onClickFullscreenToggle = closeFullscreen,
                 fullscreenPlayerListener
             )
@@ -213,24 +208,23 @@ private fun shouldPlay(state: PlayerConstants.PlayerState): Boolean {
 private fun createPlayerView(
     context: Context,
     lifecycleOwner: LifecycleOwner,
-    currentSecond: Float,
     onClickFullscreenToggle: () -> Unit,
     listener: AbstractYouTubePlayerListener,
 ): YouTubePlayerView {
     val youTubePlayerView = YouTubePlayerView(context)
     val overlayUi = youTubePlayerView.inflateCustomPlayerUi(R.layout.custom_layout)
     val view = overlayUi.findViewById<View>(R.id.fullscreenToggle)
+
     view.setOnClickListener {
         onClickFullscreenToggle.invoke()
     }
     youTubePlayerView.enableAutomaticInitialization = false
-
     lifecycleOwner.lifecycle.addObserver(youTubePlayerView)
 
     val options = IFramePlayerOptions.Builder(context)
         .controls(1)
+        .rel(0)
         .fullscreen(0)
-        .start(currentSecond.toInt())
         .ivLoadPolicy(3)
         .build()
 
@@ -249,13 +243,13 @@ private fun OrientationListener(
     LaunchedEffect(orientation) {
         if (shouldBeFullscreen && orientation != previousOrientation && activity != null) {
             val fullScreenView = createFullScreenView()
-            activity.addViewMatchingParent(fullScreenView)
+            activity.addViewMatchingScreen(fullScreenView)
         }
         previousOrientation = orientation
     }
 }
 
-private fun Activity.addViewMatchingParent(view: View) {
+private fun Activity.addViewMatchingScreen(view: View) {
     val decor = window.decorView as ViewGroup
     decor.addView(
         view,
