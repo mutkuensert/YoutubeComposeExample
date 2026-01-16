@@ -80,21 +80,6 @@ fun Screen(modifier: Modifier = Modifier) {
     }
 }
 
-data class FullscreenConfig(
-    val orientationOnEnterFullscreen: Int?,
-    val orientationOnExitFullscreen: Int?
-) {
-
-    companion object {
-        fun default(): FullscreenConfig {
-            return FullscreenConfig(
-                orientationOnEnterFullscreen = null,
-                orientationOnExitFullscreen = null
-            )
-        }
-    }
-}
-
 /**
  * Add `android:configChanges="orientation|screenSize"` for owner activity in the manifest file.
  *
@@ -240,4 +225,19 @@ private fun Activity.addViewMatchingScreen(view: View) {
 
 private fun View.removeFromParent() {
     (this.parent as? ViewGroup)?.removeView(this)
+}
+
+data class FullscreenConfig(
+    val orientationOnEnterFullscreen: Int?,
+    val orientationOnExitFullscreen: Int?
+) {
+
+    companion object {
+        fun default(): FullscreenConfig {
+            return FullscreenConfig(
+                orientationOnEnterFullscreen = null,
+                orientationOnExitFullscreen = null
+            )
+        }
+    }
 }
