@@ -2,6 +2,7 @@ package com.mutkuensert.youtubecomposeexample
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -67,16 +68,63 @@ fun Screen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            VideoPlayer(videoId = "VyHV0BRtdxo")
+            YoutubeVideoPlayer(
+                videoId = "VyHV0BRtdxo",
+                fullscreenConfig = FullscreenConfig(
+                    rotation = FullscreenConfig.Rotation.Sensor,
+                    requestedOrientationOnExit = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                )
+            )
             Text(text = "Other screen content")
         }
     }
 }
 
+data class FullscreenConfig(
+    val rotation: Rotation,
+    val requestedOrientationOnExit: Int?
+) {
+    enum class Rotation {
+        Sensor, System;
+
+        fun toRequestedOrientation(): Int {
+            return when (this) {
+                Sensor -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                System -> ActivityInfo.SCREEN_ORIENTATION_USER
+            }
+        }
+    }
+
+    companion object {
+        fun default(): FullscreenConfig {
+            return FullscreenConfig(
+                rotation = Rotation.System,
+                requestedOrientationOnExit = null
+            )
+        }
+    }
+}
+
+/**
+ * Add `android:configChanges="orientation|screenSize"` for owner activity in the manifest file.
+ *
+ * For example if you want the player to be rotatable when it's fullscreen and also your app
+ * has to be in portrait mode when it's not:
+ * ```
+ * YoutubeVideoPlayer(
+ *     videoId = "youtube_video_id",
+ *     fullscreenConfig = FullscreenConfig(
+ *         rotation = FullscreenConfig.Rotation.Sensor,
+ *         requestedOrientationOnExit = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+ *     )
+ * )
+ * ```
+ */
 @Composable
-private fun VideoPlayer(
+private fun YoutubeVideoPlayer(
     videoId: String,
     modifier: Modifier = Modifier,
+    fullscreenConfig: FullscreenConfig = FullscreenConfig.default()
 ) {
     val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -94,6 +142,9 @@ private fun VideoPlayer(
     }
     val exitFullscreen = {
         activity?.showSystemBars()
+        fullscreenConfig.requestedOrientationOnExit?.let {
+            activity?.requestedOrientation = it
+        }
         fullscreenView?.removeFromParent()
         fullscreenView = null
     }
@@ -109,9 +160,12 @@ private fun VideoPlayer(
                 context,
                 lifecycleOwner,
                 onEnterFullscreen = { view ->
+                    activity?.requestedOrientation =
+                        fullscreenConfig.rotation.toRequestedOrientation()
                     fullscreenView = view
                     activity?.enableTransientSystemBars()
                     activity?.addViewMatchingScreen(view)
+
                 },
                 exitFullscreen,
                 playerListener
