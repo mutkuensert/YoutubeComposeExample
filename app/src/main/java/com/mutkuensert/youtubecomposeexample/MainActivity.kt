@@ -71,8 +71,8 @@ fun Screen(modifier: Modifier = Modifier) {
             YoutubeVideoPlayer(
                 videoId = "VyHV0BRtdxo",
                 fullscreenConfig = FullscreenConfig(
-                    rotation = FullscreenConfig.Rotation.Sensor,
-                    requestedOrientationOnExit = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    orientationOnEnterFullscreen = ActivityInfo.SCREEN_ORIENTATION_SENSOR,
+                    orientationOnExitFullscreen = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 )
             )
             Text(text = "Other screen content")
@@ -81,25 +81,15 @@ fun Screen(modifier: Modifier = Modifier) {
 }
 
 data class FullscreenConfig(
-    val rotation: Rotation,
-    val requestedOrientationOnExit: Int?
+    val orientationOnEnterFullscreen: Int?,
+    val orientationOnExitFullscreen: Int?
 ) {
-    enum class Rotation {
-        Sensor, System;
-
-        fun toRequestedOrientation(): Int {
-            return when (this) {
-                Sensor -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
-                System -> ActivityInfo.SCREEN_ORIENTATION_USER
-            }
-        }
-    }
 
     companion object {
         fun default(): FullscreenConfig {
             return FullscreenConfig(
-                rotation = Rotation.System,
-                requestedOrientationOnExit = null
+                orientationOnEnterFullscreen = null,
+                orientationOnExitFullscreen = null
             )
         }
     }
@@ -114,8 +104,8 @@ data class FullscreenConfig(
  * YoutubeVideoPlayer(
  *     videoId = "youtube_video_id",
  *     fullscreenConfig = FullscreenConfig(
- *         rotation = FullscreenConfig.Rotation.Sensor,
- *         requestedOrientationOnExit = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+ *         orientationOnEnterFullscreen = ActivityInfo.SCREEN_ORIENTATION_SENSOR,
+ *         orientationOnExitFullscreen = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
  *     )
  * )
  * ```
@@ -142,7 +132,7 @@ private fun YoutubeVideoPlayer(
     }
     val exitFullscreen = {
         activity?.showSystemBars()
-        fullscreenConfig.requestedOrientationOnExit?.let {
+        fullscreenConfig.orientationOnExitFullscreen?.let {
             activity?.requestedOrientation = it
         }
         fullscreenView?.removeFromParent()
@@ -160,8 +150,9 @@ private fun YoutubeVideoPlayer(
                 context,
                 lifecycleOwner,
                 onEnterFullscreen = { view ->
-                    activity?.requestedOrientation =
-                        fullscreenConfig.rotation.toRequestedOrientation()
+                    fullscreenConfig.orientationOnEnterFullscreen?.let {
+                        activity?.requestedOrientation = it
+                    }
                     fullscreenView = view
                     activity?.enableTransientSystemBars()
                     activity?.addViewMatchingScreen(view)
@@ -248,5 +239,5 @@ private fun Activity.addViewMatchingScreen(view: View) {
 }
 
 private fun View.removeFromParent() {
-    (this.parent as ViewGroup).removeView(this)
+    (this.parent as? ViewGroup)?.removeView(this)
 }
