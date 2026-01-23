@@ -11,9 +11,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +45,7 @@ import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.Abs
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.FullscreenListener
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.YouTubePlayerTracker
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.utils.loadOrCueVideo
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
 class MainActivity : ComponentActivity() {
@@ -94,15 +98,19 @@ fun Screen(modifier: Modifier = Modifier) {
  *     )
  * )
  * ```
+ * @param previewOverlay a composable that will be shown on top of the original player and will start playing video when clicked.
+ * The overlay will be constrained to a 16:9 aspect ratio.
  */
 @Composable
-private fun YoutubeVideoPlayer(
+fun YoutubeVideoPlayer(
     videoId: String,
     modifier: Modifier = Modifier,
-    fullscreenConfig: FullscreenConfig = FullscreenConfig.default()
+    fullscreenConfig: FullscreenConfig = FullscreenConfig.default(),
+    previewOverlay: @Composable (() -> Unit)? = null,
 ) {
     val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var showsPreviewOverlay by rememberSaveable { mutableStateOf(true) }
     var playerView: YouTubePlayerView? by remember { mutableStateOf(null) }
     var fullscreenView: View? by remember { mutableStateOf(null) }
     var player: YouTubePlayer? by remember { mutableStateOf(null) }
@@ -128,31 +136,49 @@ private fun YoutubeVideoPlayer(
         BackHandler { exitFullscreen() }
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            val view = createPlayerView(
-                context,
-                lifecycleOwner,
-                onEnterFullscreen = { view ->
-                    fullscreenConfig.orientationOnEnterFullscreen?.let {
-                        activity?.requestedOrientation = it
-                    }
-                    fullscreenView = view
-                    activity?.enableTransientSystemBars()
-                    activity?.addViewMatchingScreen(view)
+    Box(
+        modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        AndroidView(
+            factory = { context ->
+                val view = createPlayerView(
+                    context,
+                    lifecycleOwner,
+                    onEnterFullscreen = { view ->
+                        fullscreenConfig.orientationOnEnterFullscreen?.let {
+                            activity?.requestedOrientation = it
+                        }
+                        fullscreenView = view
+                        activity?.enableTransientSystemBars()
+                        activity?.addViewMatchingScreen(view)
 
-                },
-                exitFullscreen,
-                playerListener
-            )
-            playerView = view
-            view
+                    },
+                    exitFullscreen,
+                    playerListener
+                )
+                playerView = view
+                view
+            }
+        )
+
+        if (previewOverlay != null && showsPreviewOverlay) {
+            Box(
+                Modifier
+                    .aspectRatio(16f / 9f)
+                    .clickable { showsPreviewOverlay = false },
+            ) {
+                previewOverlay()
+            }
         }
-    )
+    }
 
-    LaunchedEffect(player, videoId) {
-        player?.cueVideo(videoId, 0f)
+    LaunchedEffect(showsPreviewOverlay, player, videoId) {
+        if (!showsPreviewOverlay && previewOverlay != null) {
+            player?.loadOrCueVideo(lifecycleOwner.lifecycle, videoId, 0f)
+        } else {
+            player?.cueVideo(videoId, 0f)
+        }
     }
 
     DisposableEffect(lifecycleOwner, activity) {
@@ -162,6 +188,7 @@ private fun YoutubeVideoPlayer(
             playerView?.let { lifecycleOwner.lifecycle.removeObserver(it) }
             playerView?.release()
             playerView = null
+            showsPreviewOverlay = true
         }
     }
 }
